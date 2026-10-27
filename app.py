@@ -10,7 +10,7 @@ import time
 import streamlit.components.v1 as components 
 
 st.set_page_config(
-    page_title="ISS Tracker & Pass Predictor ",
+    page_title="LIVE ISS Tracker & Pass Predictor ",
     page_icon="🛰️",
     layout="wide" 
 )
