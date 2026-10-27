@@ -60,14 +60,14 @@ st.subheader("Live Tracker")
 st.session_state.iss_iframe_uri = tracker.render_live_iss_leaflet(iss_sat)
 st.iframe(st.session_state.iss_iframe_uri, height=440)
 
-st.subheader("Satellite Pass Predictor") 
+st.subheader("Pass Predictor") 
 
-names = [n for n in ["ISS (ZARYA)"] if n in sats]
-if not names:
-    names = list(sats.keys())
+# Select the ISS satellite directly without a dropdown widget
+sat_name = "ISS (ZARYA)"
+sat = sats.get(sat_name, list(sats.values())[0])
 
-sat_name = st.selectbox("Satellite", names)
-sat = sats[sat_name]
+# Display it cleanly as text instead of a select box
+st.text(f"Satellite: {sat_name}")
 
 n_kozai = sat.model.no_kozai
 period_min = 2 * math.pi / n_kozai
