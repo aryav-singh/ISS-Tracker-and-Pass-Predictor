@@ -83,20 +83,54 @@ def get_tle_lines(name):
             return lines[i + 1], lines[i + 2]
     return None, None
 
+
+
 def search_locations(query):
     if not query or len(query.strip()) < 2:
         return []
+    
+    # 1. Curated fallback list to guarantee functionality on Streamlit Cloud
+    popular_cities = [
+        {"address": "Toronto, Ontario, Canada", "lat": 43.6532, "lon": -79.3832},
+        {"address": "New York, NY, United States", "lat": 40.7128, "lon": -74.0060},
+        {"address": "London, United Kingdom", "lat": 51.5074, "lon": -0.1278},
+        {"address": "Vancouver, British Columbia, Canada", "lat": 49.2827, "lon": -123.1207},
+        {"address": "Montreal, Quebec, Canada", "lat": 45.5017, "lon": -73.5673},
+        {"address": "Calgary, Alberta, Canada", "lat": 51.0447, "lon": -114.0719},
+        {"address": "Ottawa, Ontario, Canada", "lat": 45.4215, "lon": -75.6972},
+        {"address": "Sydney, NSW, Australia", "lat": -33.8688, "lon": 151.2093},
+        {"address": "Tokyo, Japan", "lat": 35.6762, "lon": 139.6503},
+        {"address": "Paris, France", "lat": 48.8566, "lon": 2.3522},
+        {"address": "Berlin, Germany", "lat": 52.5200, "lon": 13.4050},
+        {"address": "Los Angeles, CA, United States", "lat": 34.0522, "lon": -118.2437},
+        {"address": "Chicago, IL, United States", "lat": 41.8781, "lon": -87.6298},
+        {"address": "San Francisco, CA, United States", "lat": 37.7749, "lon": -122.4194},
+        {"address": "Dubai, United Arab Emirates", "lat": 25.2048, "lon": 55.2708},
+        {"address": "Singapore", "lat": 1.3521, "lon": 103.8198},
+    ]
+
+    results = []
+    query_lower = query.lower()
+
+    # Check the fallback list first
+    for city in popular_cities:
+        if query_lower in city["address"].lower():
+            results.append((city["address"], {"lat": city["lat"], "lon": city["lon"], "address": city["address"]}))
+
+    # 2. Try live geocoding (works locally and whenever cloud IP isn't blocked)
     try:
         geolocator = Nominatim(user_agent="satellite_pass_tracker_app")
         locations = geolocator.geocode(query, exactly_one=False, limit=5)
         if locations:
-            return [
-                (loc.address, {"lat": loc.latitude, "lon": loc.longitude, "address": loc.address}) 
-                for loc in locations
-            ]
+            for loc in locations:
+                item = {"lat": loc.latitude, "lon": loc.longitude, "address": loc.address}
+                # Prevent duplicates if already added via the fallback list
+                if not any(r[0] == loc.address for r in results):
+                    results.append((loc.address, item))
     except Exception:
         pass
-    return []
+
+    return results
 
 def find_passes(sat, lat, lon, eph, days=10, min_alt=10.0):
     site = wgs84.latlon(lat, lon)

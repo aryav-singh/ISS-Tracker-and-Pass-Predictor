@@ -7,3 +7,10 @@ matplotlib
 geopy
 tracker
 datetime
+plotly.graph_objects
+os
+socket
+time
+base64
+tracker
+zoneInfo
