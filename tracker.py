@@ -97,12 +97,15 @@ def search_locations(searchterm: str, value=None):
             return []
             
         url = "https://us1.locationiq.com/v1/search.php"
+        # --- PUT IT HERE ---
         params = {
             'key': api_key,
             'q': searchterm,
             'format': 'json',
-            'limit': 5
+            'limit': 5,
+            'normalizecity': 1,  # This forces cleaner, more specific city names
         }
+        # -------------------
         
         response = requests.get(url, params=params, timeout=3)
         if response.status_code == 200:
