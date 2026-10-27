@@ -2,7 +2,7 @@
 import numpy as np 
 import matplotlib.pyplot as plt 
 from skyfield.api import load, wgs84 
-from geopy.geocoders import Nominatim
+from geopy.geocoders import LocationIQ
 import plotly.graph_objects as go
 import urllib.request
 import streamlit.components.v1 as components
@@ -86,20 +86,19 @@ def get_tle_lines(name):
 
 
 
-def search_locations(query):
-    if not query or len(query.strip()) < 2:
+def search_locations(searchterm: str, value=None):
+    # If a value was already selected or the search term is empty/too short
+    if not searchterm or len(str(searchterm).strip()) < 2:
         return []
     
     results = []
     try:
-        # Pulls the secure API key from Streamlit Secrets
         api_key = st.secrets.get("LOCATIONIQ_API_KEY", "")
         if not api_key:
             return []
             
-        # LocationIQ handles cloud IPs seamlessly without blocking
         geolocator = LocationIQ(api_key=api_key, user_agent="satellite_pass_tracker_app")
-        locations = geolocator.geocode(query, exactly_one=False, limit=5, timeout=3)
+        locations = geolocator.geocode(str(searchterm), exactly_one=False, limit=5, timeout=3)
         
         if locations:
             for loc in locations:
