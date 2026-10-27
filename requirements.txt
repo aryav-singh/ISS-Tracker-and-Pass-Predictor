@@ -6,10 +6,3 @@ plotly
 matplotlib
 geopy
 tracker
-datetime
-os
-socket
-time
-base64
-tracker
-zoneInfo
