@@ -2,7 +2,7 @@
 import numpy as np 
 import matplotlib.pyplot as plt 
 from skyfield.api import load, wgs84 
-from geopy.geocoders import LocationIQ
+import requests
 import plotly.graph_objects as go
 import urllib.request
 import streamlit.components.v1 as components
@@ -87,7 +87,6 @@ def get_tle_lines(name):
 
 
 def search_locations(searchterm: str, value=None):
-    # If a value was already selected or the search term is empty/too short
     if not searchterm or len(str(searchterm).strip()) < 2:
         return []
     
@@ -97,16 +96,26 @@ def search_locations(searchterm: str, value=None):
         if not api_key:
             return []
             
-        geolocator = LocationIQ(api_key=api_key, user_agent="satellite_pass_tracker_app")
-        locations = geolocator.geocode(str(searchterm), exactly_one=False, limit=5, timeout=3)
+        url = "https://us1.locationiq.com/v1/search.php"
+        params = {
+            'key': api_key,
+            'q': searchterm,
+            'format': 'json',
+            'limit': 5
+        }
         
-        if locations:
-            for loc in locations:
-                item = {"lat": loc.latitude, "lon": loc.longitude, "address": loc.address}
-                results.append((loc.address, item))
+        response = requests.get(url, params=params, timeout=3)
+        if response.status_code == 200:
+            data = response.json()
+            for loc in data:
+                lat = float(loc['lat'])
+                lon = float(loc['lon'])
+                address = loc['display_name']
+                item = {"lat": lat, "lon": lon, "address": address}
+                results.append((address, item))
                 
     except Exception as e:
-        print(f"LocationIQ error: {e}")
+        print(f"LocationIQ API error: {e}")
         
     return results
 

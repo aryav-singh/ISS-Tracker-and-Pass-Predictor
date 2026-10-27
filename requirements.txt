@@ -4,5 +4,5 @@ timezonefinder
 streamlit-searchbox
 plotly
 matplotlib
-geopy
+requests
 tracker
