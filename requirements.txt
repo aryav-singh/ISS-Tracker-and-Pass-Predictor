@@ -1,0 +1,6 @@
+streamlit
+skyfield
+timezonefinder
+streamlit-searchbox
+plotly
+matplotlib
