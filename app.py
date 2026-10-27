@@ -87,35 +87,53 @@ st.subheader(f"Pass Predictor: {sat_name}")
 n_kozai = sat.model.no_kozai
 period_min = 2 * math.pi / n_kozai
 
-st.markdown("**Search Location:**")
+# Option to choose between city search or manual coordinates
+input_mode = st.radio("Location Input Method", ["Search by City", "Enter Manual Coordinates"], horizontal=True, label_visibility="collapsed")
 
-# Initialize session state for the selected location if it doesn't exist
-if "selected_loc" not in st.session_state:
-    st.session_state.selected_loc = None
+if input_mode == "Search by City":
+    st.markdown("**Search Location:**")
 
-has_searched = st.session_state.selected_loc is not None
-placeholder_text = "Type a different city..." if has_searched else "Type a city"
-widget_key = f"location_searchbox_{'searched' if has_searched else 'initial'}"
+    # Initialize session state for the selected location if it doesn't exist
+    if "selected_loc" not in st.session_state:
+        st.session_state.selected_loc = None
 
-# Full-width searchbox spanning the entire page container
-search_result = st_searchbox(
-    tracker.search_locations,
-    placeholder=placeholder_text,
-    clear_on_submit=True,
-    key=widget_key
-)
+    has_searched = st.session_state.selected_loc is not None
+    placeholder_text = "Type a different city..." if has_searched else "Type a city"
+    widget_key = f"location_searchbox_{'searched' if has_searched else 'initial'}"
 
-if search_result and search_result != st.session_state.selected_loc:
-    st.session_state.selected_loc = search_result
+    # Full-width searchbox spanning the entire page container
+    search_result = st_searchbox(
+        tracker.search_locations,
+        placeholder=placeholder_text,
+        clear_on_submit=True,
+        key=widget_key
+    )
 
-if not st.session_state.selected_loc:
-    st.info("Start typing a city name above to search for passes...")
-    st.stop()
+    if search_result and search_result != st.session_state.selected_loc:
+        st.session_state.selected_loc = search_result
 
-lat = st.session_state.selected_loc["lat"]
-lon = st.session_state.selected_loc["lon"]
-# Shorten the address right here so it updates everywhere in the app
-resolved_address = tracker.short_name(st.session_state.selected_loc["address"])
+    if not st.session_state.selected_loc:
+        st.info("Start typing a city name above to search for passes...")
+        st.stop()
+
+    lat = st.session_state.selected_loc["lat"]
+    lon = st.session_state.selected_loc["lon"]
+    resolved_address = tracker.short_name(st.session_state.selected_loc["address"])
+
+else:
+    st.markdown("**Enter Coordinates:**")
+    col_lat, col_lon = st.columns(2)
+    with col_lat:
+        lat = st.number_input("Latitude (°)", min_value=-90.0, max_value=90.0, value=None, step=0.01, format="%.4f", placeholder="e.g. 43.65")
+    with col_lon:
+        lon = st.number_input("Longitude (°)", min_value=-180.0, max_value=180.0, value=None, step=0.01, format="%.4f", placeholder="e.g. -79.38")
+    
+    if lat is None or lon is None:
+        st.info("Please enter both latitude and longitude coordinates above...")
+        st.stop()
+    
+    resolved_address = f"Custom Coordinates ({lat:.2f}°, {lon:.2f}°)"
+
 site_obj = wgs84.latlon(lat, lon)
 
 st.success(f"📍 Selected: **{resolved_address}** (Lat: {lat:.2f}, Lon: {lon:.2f})")
@@ -127,7 +145,7 @@ min_alt = st.number_input(
     value=10,
     step=1,
     placeholder="Maximum 90 degrees",
-    help="Minimum elevation angle above the horizon for a valid pass."
+    help="Minimum elevation angle above the horizon to count as a visible pass."
 )
 
 days_to_search = st.number_input(
@@ -136,7 +154,7 @@ days_to_search = st.number_input(
     max_value=30,
     value=10,
     step=1,
-    placeholder="Maximum 30 days",
+    placeholder="Maximum 30 days, greater than 7 days are subject to significant inaccuracies",
     help="Number of future days to scan for satellite passes."
 )
 
@@ -146,7 +164,33 @@ tz_name = get_tzf().timezone_at(lat=lat, lng=lon) or "UTC"
 tz = ZoneInfo(tz_name)
 
 passes = tracker.find_passes(sat, lat, lon, eph, days_to_search, min_alt)
-filtered_passes = [p for p in passes if not (only_visible and not p["visible"])]
+
+# Filter passes while preserving their true absolute index from the full list
+passes = tracker.find_passes(sat, lat, lon, eph, days_to_search, min_alt)
+
+filtered_passes = []
+rows = []
+pass_indices = {}
+
+for absolute_idx, p in enumerate(passes):
+    if only_visible and not p["visible"]:
+        continue
+    
+    filtered_passes.append(p)
+    pass_num = absolute_idx + 1
+    
+    rows.append({
+        "Pass Number": pass_num,
+        "Peak (local)": tracker.fmt_local(p["peak"], tz),
+        "Peak (UTC)": tracker.fmt_utc(p["peak"]),
+        "Maximum altitude (°)": round(p["max_alt"]),
+        "Peak azimuth (°)": round(p["peak_az"]),
+        "Duration (s)": round((p["set"] - p["rise"]) * 86400),
+        "Sun altitude (°)": round(p["sun_alt"]),
+    })
+    
+    label = f"Pass #{pass_num} — Peak: {tracker.fmt_local(p['peak'], tz)} (Max Altitude: {round(p['max_alt'])}°)"
+    pass_indices[label] = len(filtered_passes) - 1
 
 if not filtered_passes:
     st.info("No passes found for this location with current filters.")
@@ -158,40 +202,68 @@ for i, p in enumerate(filtered_passes):
         "Pass Number": i+1,
         "Peak (local)": tracker.fmt_local(p["peak"], tz),
         "Peak (UTC)": tracker.fmt_utc(p["peak"]),
-        "Maximum altitude (°)": round(p["max_alt"]),
-        "Peak azimuth (°)": round(p["peak_az"]),
+        "Maximum altitude (°)": round(p["max_alt"], 1),
+        "Peak azimuth (°)": round(p["peak_az"], 1),
         "Duration (s)": round((p["set"] - p["rise"]) * 86400),
-        "Sun altitude (°)": round(p["sun_alt"]),
+        "Sun altitude (°)": round(p["sun_alt"], 1),
     })
 
 
-# Local mapping for full-form timezone display in the caption only
 tz_full_names = {
-    "EDT": "Eastern Daylight Time",
-    "EST": "Eastern Standard Time",
-    "CDT": "Central Daylight Time",
-    "CST": "Central Standard Time",
-    "MDT": "Mountain Daylight Time",
-    "MST": "Mountain Standard Time",
-    "PDT": "Pacific Daylight Time",
-    "PST": "Pacific Standard Time",
-    "BST": "British Summer Time",
-    "GMT": "Greenwich Mean Time",
-    "UTC": "Coordinated Universal Time"
+    "EDT": "Eastern Daylight Time (EDT)",
+    "EST": "Eastern Standard Time (EST)",
+    "CDT": "Central Daylight Time (CDT)",
+    "CST": "Central Standard Time (CST)",
+    "MDT": "Mountain Daylight Time (MDT)",
+    "MST": "Mountain Standard Time (MST)",
+    "PDT": "Pacific Daylight Time (PDT)",
+    "PST": "Pacific Standard Time (PST)",
+    "AKDT": "Alaska Daylight Time (AKDT)",
+    "AKST": "Alaska Standard Time (AKST)",
+    "HST": "Hawaii Standard Time (HST)",
+    "BST": "British Summer Time (BST)",
+    "GMT": "Greenwich Mean Time (GMT)",
+    "UTC": "Coordinated Universal Time (UTC)",
+    "WET": "Western European Time (WET)",
+    "WEST": "Western European Summer Time (WEST)",
+    "CET": "Central European Time (CET)",
+    "CEST": "Central European Summer Time (CEST)",
+    "EET": "Eastern European Time (EET)",
+    "EEST": "Eastern European Summer Time (EEST)",
+    "MSK": "Moscow Time (MSK)",
+    "IST": "Indian Standard Time (IST)",
+    "CST_CN": "China Standard Time (CST_CN)",
+    "JST": "Japan Standard Time (JST)",
+    "KST": "Korea Standard Time (KST)",
+    "AEST": "Australian Eastern Standard Time (AEST)",
+    "AEDT": "Australian Eastern Daylight Time (AEDT)",
+    "ACST": "Australian Central Standard Time (ACST)",
+    "ACDT": "Australian Central Daylight Time (ACDT)",
+    "AWST": "Australian Western Standard Time (AWST)",
+    "NZST": "New Zealand Standard Time (NZST)",
+    "NZDT": "New Zealand Daylight Time (NZDT)",
+    "BRT": "Brasilia Time (BRT)",
+    "ART": "Argentina Time (ART)",
+    "SAST": "South Africa Standard Time (SAST)",
+    "GST": "Gulf Standard Time (GST)"
 }
 
 sample_local_time = datetime.now(tz)
 abbr = sample_local_time.tzname() or ""
-full_zone_name = tz_full_names.get(abbr, abbr)
 
 total_min = int(sample_local_time.utcoffset().total_seconds() // 60)
 sign = "+" if total_min >= 0 else "-"          
 h, m = divmod(abs(total_min), 60)            
 offset_str = f"UTC{sign}{h}" + (f":{m:02d}" if m else "")
 
-tz_caption_display = f"{full_zone_name}, {offset_str}" if full_zone_name else offset_str
+# Only use text names if abbr is genuinely alphabetic (like EDT, EST, BST)
+if abbr and abbr.isalpha() and abbr not in ["UTC"]:
+    full_zone_name = tz_full_names.get(abbr, abbr)
+    clean_tz = f"{full_zone_name}, {offset_str}"
+else:
+    clean_tz = offset_str
 
-st.caption(f"Time zone: {tz_caption_display} | Data updated on {tracker.fmt_utc(sat.epoch)}")
+st.caption(f"Time zone: {clean_tz} | Data updated on {tracker.fmt_utc(sat.epoch)}")
 st.dataframe(rows, use_container_width=True)
 
 st.markdown("---")

@@ -15,7 +15,10 @@ import socket
 TLE_URL = "https://celestrak.org/NORAD/elements/gp.php?GROUP=stations&FORMAT=tle"
 TLE_NAME = "stations.tle" 
 MAX_TLE_AGE_DAYS = 0.2
-SUN_LIMIT = -6.0 
+# Define twilight boundaries (civil/nautical twilight range)
+SUN_LIMIT_UPPER = -6.0   # Upper bound: Civil twilight boundary (sky must be darker than this)
+SUN_LIMIT_LOWER = -28.0  # Lower bound: Deepest allowable night sun altitude 
+
 
 
 # --- FORCE IPv4 TO BYPASS WINDOWS TIMEOUT BUG (WinError 10060) ---
@@ -102,6 +105,9 @@ def find_passes(sat, lat, lon, eph, days=10, min_alt=10.0):
     times, events = sat.find_events(site, t0, t1, altitude_degrees=min_alt)
     observer = eph["earth"] + site
     
+    SUN_LIMIT_UPPER = -6.0   
+    SUN_LIMIT_LOWER = -28.0  
+    
     passes = [] 
     current = {} 
     for t, e in zip(times, events):
@@ -110,17 +116,37 @@ def find_passes(sat, lat, lon, eph, days=10, min_alt=10.0):
         elif e == 1 and current: 
             alt, az, _ = (sat - site).at(t).altaz()
             current["peak"] = t
-            current["max_alt"] = alt.degrees
-            current["peak_az"] = az.degrees
+            current["max_alt"] = round(alt.degrees, 1)
+            current["peak_az"] = round(az.degrees, 1)
         elif e == 2 and "peak" in current: 
             current["set"] = t
-            sunlit = bool(sat.at(current["peak"]).is_sunlit(eph)) 
-            sun_alt = observer.at(current["peak"]).observe(eph["sun"]).apparent().altaz()[0].degrees
-            current["sunlit"] = sunlit
-            current["sun_alt"] = sun_alt
-            current["visible"] = sunlit and sun_alt < SUN_LIMIT 
+            
+            # Sample across the entire pass window to catch valid rising/setting windows
+            t_check = ts.linspace(current["rise"], current["set"], 30)
+            sunlit_arr = sat.at(t_check).is_sunlit(eph)
+            obs_at_t = observer.at(t_check)
+            sun_alt_arr = obs_at_t.observe(eph["sun"]).apparent().altaz()[0].degrees
+            
+            visible_points = [
+                bool(s and SUN_LIMIT_LOWER <= sa < SUN_LIMIT_UPPER) 
+                for s, sa in zip(sunlit_arr, sun_alt_arr)
+            ]
+            
+            peak_sun_alt = observer.at(current["peak"]).observe(eph["sun"]).apparent().altaz()[0].degrees
+            
+            current["sunlit"] = bool(sat.at(current["peak"]).is_sunlit(eph)) 
+            current["sun_alt"] = round(peak_sun_alt, 1)
+            
+            # Must have valid visible points during the pass, 
+            # AND the peak sun altitude cannot exceed our strict -28.0 floor
+            current["visible"] = bool(
+                any(visible_points) and 
+                peak_sun_alt >= SUN_LIMIT_LOWER
+            )
+            
             passes.append(current)
             current = {}
+            
     return passes
 
 def visible_window(sat, eph, p, n=600):
@@ -139,8 +165,14 @@ def zone_label(local_dt):
     sign = "+" if total_min >= 0 else "-"        
     h, m = divmod(abs(total_min), 60)            
     offset = f"UTC{sign}{h}" + (f":{m:02d}" if m else "")  
-    abbr = local_dt.tzname()                     
-    return f"{abbr}, {offset}" if abbr and abbr[0].isalpha() else offset
+    abbr = local_dt.tzname() 
+    
+    # If abbr is a real alphabetic name (like EDT, EST), combine it with the offset
+    if abbr and abbr.isalpha() and abbr not in ["UTC", "GMT"]:
+        return f"{abbr}, {offset}"
+    
+    # Otherwise (for regions returning raw numbers like "+12"), just return the clean offset
+    return offset
 
 def fmt_local(t, tz):
     d = t.astimezone(tz) 
@@ -168,18 +200,24 @@ def plot_sky_path(sat, site_obj, site_name, p, eph):
     ax.grid(True, color=(0, 0, 0, 0.15), linestyle='--', linewidth=0.7)
     # -------------------------------------------
 
-    ax.plot(theta, np.where(lit, np.nan, r), "--", color="gray", label="in shadow (not visible)")
-    ax.plot(theta, np.where(lit, r, np.nan), "-", color="tab:blue", label="sunlit (visible)")
-    ax.plot(theta[0], r[0], "go", label="rise")
-    ax.plot(theta[-1], r[-1], "ro", label="set")
+    ax.plot(theta, np.where(lit, np.nan, r), "--", color="gray", label="In Shadow (not visible)")
+   # 1. "Sunlit (visible)" line styled blue to match the ground track Pass Window color ('blue')
+    ax.plot(theta, np.where(lit, r, np.nan), "-", color="blue", label="Sunlit (visible)")
+    
+    ax.plot(theta[0], r[0], "go", label="Station Rise")
+    ax.plot(theta[-1], r[-1], "ro", label="Station Set")
+    
     i_peak = np.argmax(alt.degrees)
-    ax.plot(theta[i_peak], r[i_peak], "b^", label="peak")
+    
+    # Add linestyle="None" so Matplotlib knows this is a marker-only plot and won't draw a line in the legend
+    ax.plot(theta[i_peak], r[i_peak], marker="o", color="cyan", markersize=8, markeredgewidth=0.5, linestyle="None", label="Peak Position")
 
     lit_idx = np.where(lit)[0]
     if len(lit_idx) > 0 and lit_idx[0] > 0:
-        ax.plot(theta[lit_idx[0]], r[lit_idx[0]], "*", color="gold", markersize=12, label="exits shadow")
+        # 3. Replaced yellow star with a magenta dot ("o", color="magenta") for "Exits shadow"
+        ax.plot(theta[lit_idx[0]], r[lit_idx[0]], "o", color="magenta", markersize=6.5, label="Exits shadow")
     if len(lit_idx) > 0 and lit_idx[-1] < len(t_arr) - 1:
-        ax.plot(theta[lit_idx[-1]], r[lit_idx[-1]], "v", color="darkorange", markersize=10, label="enters shadow")
+        ax.plot(theta[lit_idx[-1]], r[lit_idx[-1]], "o", color="darkorange", markersize=6.5, label="Enters shadow")
 
     ax.set_ylim(0, 90)
     ax.set_yticks([0, 30, 60, 90])
@@ -193,8 +231,18 @@ def plot_sky_path(sat, site_obj, site_name, p, eph):
     ax.tick_params(colors='black', labelsize=9)
     ax.spines['polar'].set_color('black')
 
-    ax.legend(loc="upper left", bbox_to_anchor=(1.1, 1.0), fontsize=8, facecolor='white', edgecolor='gray', labelcolor='black')
-    plt.subplots_adjust(right=0.65)
+   # Configure legend below the chart with labels visible, transparent background, and white text
+    ax.legend(
+        loc="upper center", 
+        bbox_to_anchor=(0.5, -0.12), 
+        ncol=3, 
+        fontsize=8, 
+        facecolor='none', 
+        edgecolor='none', 
+        labelcolor='black',
+        frameon=False
+    )
+    plt.subplots_adjust(bottom=0.28)
     
     ax.set_title(f"ISS pass over {site_name}\nPeak Altitude: {p['max_alt']:.1f}°", fontsize=10, color='black', pad=15)
     
@@ -350,7 +398,7 @@ def plot_plotly_ground_track(sat, lat, lon, site_name, p, period_min, eph=None):
             font=dict(color="white", size=12),               # light text for dark page theme
         ),
         width=900,
-        height=450,
+        height=636,
         margin=dict(l=10, r=0, t=0, b=0),
     )
 
