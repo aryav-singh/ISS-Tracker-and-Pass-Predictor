@@ -670,7 +670,7 @@ def render_live_iss_leaflet(sat=None):
                         shade.push([darkPole, -180 + offset]);
 
                         L.polygon(shade, { color: 'transparent', fillColor: '#000814', fillOpacity: 0.45, interactive: false }).addTo(terminatorLayer);  // night
-                        L.polyline(curve, { color: '#ffb703', weight: 2, opacity: 0.9, interactive: false }).addTo(terminatorLayer);  // boundary line
+                        L.polyline(curve, { color: '#000000', weight: 2, opacity: 0.9, interactive: false }).addTo(terminatorLayer);  // boundary line
                     });
                     return sun;                                         // lets the caller display the Sun's position
                 }
@@ -765,9 +765,9 @@ def render_live_iss_leaflet(sat=None):
                             var segCenter = cleanSeg;
                             var segRight = cleanSeg.map(pt => [pt[0], pt[1] + 360]);
 
-                            L.polyline(segLeft, { color: 'black', weight: 2, opacity: 0.5 }).addTo(trajectoryGroup);
-                            L.polyline(segCenter, { color: 'black', weight: 2, opacity: 0.5 }).addTo(trajectoryGroup);
-                            L.polyline(segRight, { color: 'black', weight: 2, opacity: 0.5 }).addTo(trajectoryGroup);
+                            L.polyline(segLeft, { color: 'orange', weight: 2, opacity: 0.5 }).addTo(trajectoryGroup);
+                            L.polyline(segCenter, { color: 'orange', weight: 2, opacity: 0.5 }).addTo(trajectoryGroup);
+                            L.polyline(segRight, { color: 'orange', weight: 2, opacity: 0.5 }).addTo(trajectoryGroup);
                         }
                     } catch (innerErr) {
                         console.error(innerErr);
