@@ -86,14 +86,17 @@ def get_tle_lines(name):
 
 
 
+
 def search_locations(searchterm: str, value=None):
-    if not searchterm or len(str(searchterm).strip()) < 2:
+    # Require at least 3 characters to avoid spamming requests on every keystroke
+    if not searchterm or len(str(searchterm).strip()) < 3:
         return []
     
     results = []
     try:
         api_key = st.secrets.get("LOCATIONIQ_API_KEY", "")
         if not api_key:
+            print("LocationIQ error: No secrets found for API key.")
             return []
             
         url = "https://us1.locationiq.com/v1/search.php"
@@ -103,17 +106,21 @@ def search_locations(searchterm: str, value=None):
             'format': 'json',
             'limit': 5,
             'normalizecity': 1,
-            'addressdetails': 1,  # Unlocks granular breakdown of city, state, country
+            'addressdetails': 1,
         }
         
         response = requests.get(url, params=params, timeout=3)
+        
+        if response.status_code == 429:
+            print("LocationIQ error: Rate limit exceeded (429). Slow down typing.")
+            return []
+            
         if response.status_code == 200:
             data = response.json()
             for loc in data:
                 lat = float(loc['lat'])
                 lon = float(loc['lon'])
                 
-                # Pull clean components directly from LocationIQ's address breakdown
                 addr_parts = loc.get('address', {})
                 city = (
                     addr_parts.get('city') or 
@@ -124,7 +131,6 @@ def search_locations(searchterm: str, value=None):
                 state = addr_parts.get('state')
                 country = addr_parts.get('country')
                 
-                # Construct a clean, precise name (bypassing broad regional tags)
                 if city and state and country:
                     address = f"{city}, {state}, {country}"
                 elif city and country:
@@ -136,12 +142,11 @@ def search_locations(searchterm: str, value=None):
                     continue
                     
                 item = {"lat": lat, "lon": lon, "address": address}
-                # Prevent duplicate entries in suggestions
                 if not any(r[0] == address for r in results):
                     results.append((address, item))
                 
     except Exception as e:
-        print(f"LocationIQ API error: {e}")
+        print(f"LocationIQ error: {e}")
         
     return results
 
