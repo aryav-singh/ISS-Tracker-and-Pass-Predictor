@@ -7,7 +7,6 @@ matplotlib
 geopy
 tracker
 datetime
-plotly.graph_objects
 os
 socket
 time
