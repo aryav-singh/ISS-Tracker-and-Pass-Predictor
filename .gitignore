@@ -2,4 +2,4 @@ __pycache__/
 *.pyc
 *.pyo
 *.pyd
-__secrets.toml__/
+.streamlit/secrets.toml
