@@ -11,6 +11,7 @@ from skyfield.api import wgs84
 import time
 import os
 import socket
+import streamlit as st
 
 TLE_URL = "https://celestrak.org/NORAD/elements/gp.php?GROUP=stations&FORMAT=tle"
 TLE_NAME = "stations.tle" 
@@ -89,49 +90,25 @@ def search_locations(query):
     if not query or len(query.strip()) < 2:
         return []
     
-    # 1. Curated fallback list
-    popular_cities = [
-        {"address": "Toronto, Ontario, Canada", "lat": 43.6532, "lon": -79.3832},
-        {"address": "New York, NY, United States", "lat": 40.7128, "lon": -74.0060},
-        {"address": "London, United Kingdom", "lat": 51.5074, "lon": -0.1278},
-        {"address": "Vancouver, British Columbia, Canada", "lat": 49.2827, "lon": -123.1207},
-        {"address": "Montreal, Quebec, Canada", "lat": 45.5017, "lon": -73.5673},
-        {"address": "Calgary, Alberta, Canada", "lat": 51.0447, "lon": -114.0719},
-        {"address": "Ottawa, Ontario, Canada", "lat": 45.4215, "lon": -75.6972},
-        {"address": "Sydney, NSW, Australia", "lat": -33.8688, "lon": 151.2093},
-        {"address": "Tokyo, Japan", "lat": 35.6762, "lon": 139.6503},
-        {"address": "Paris, France", "lat": 48.8566, "lon": 2.3522},
-        {"address": "Berlin, Germany", "lat": 52.5200, "lon": 13.4050},
-        {"address": "Los Angeles, CA, United States", "lat": 34.0522, "lon": -118.2437},
-        {"address": "Chicago, IL, United States", "lat": 41.8781, "lon": -87.6298},
-        {"address": "San Francisco, CA, United States", "lat": 37.7749, "lon": -122.4194},
-        {"address": "Dubai, United Arab Emirates", "lat": 25.2048, "lon": 55.2708},
-        {"address": "Singapore", "lat": 1.3521, "lon": 103.8198},
-    ]
-
     results = []
-    query_lower = query.lower()
-
-    # Check fallback matches first
-    for city in popular_cities:
-        if query_lower in city["address"].lower():
-            results.append((city["address"], {"lat": city["lat"], "lon": city["lon"], "address": city["address"]}))
-
-    # 2. Try live geocoding with a unique user agent and a strict timeout
     try:
-        # Nominatim requires a unique user-agent identifying your application
-        geolocator = Nominatim(user_agent="iss_pass_predictor_app_aryav_2026")
-        # Added a 3-second timeout so it doesn't hang the UI if blocked
+        # Pulls the secure API key from Streamlit Secrets
+        api_key = st.secrets.get("LOCATIONIQ_API_KEY", "")
+        if not api_key:
+            return []
+            
+        # LocationIQ handles cloud IPs seamlessly without blocking
+        geolocator = LocationIQ(api_key=api_key, user_agent="satellite_pass_tracker_app")
         locations = geolocator.geocode(query, exactly_one=False, limit=5, timeout=3)
+        
         if locations:
             for loc in locations:
                 item = {"lat": loc.latitude, "lon": loc.longitude, "address": loc.address}
-                if not any(r[0] == loc.address for r in results):
-                    results.append((loc.address, item))
+                results.append((loc.address, item))
+                
     except Exception as e:
-        # Print the exact error to your Streamlit logs so we know why it's failing
-        print(f"Live geocoding error on cloud: {e}")
-
+        print(f"LocationIQ error: {e}")
+        
     return results
 
 def find_passes(sat, lat, lon, eph, days=10, min_alt=10.0):
