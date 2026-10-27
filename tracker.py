@@ -89,7 +89,7 @@ def search_locations(query):
     if not query or len(query.strip()) < 2:
         return []
     
-    # 1. Curated fallback list to guarantee functionality on Streamlit Cloud
+    # 1. Curated fallback list
     popular_cities = [
         {"address": "Toronto, Ontario, Canada", "lat": 43.6532, "lon": -79.3832},
         {"address": "New York, NY, United States", "lat": 40.7128, "lon": -74.0060},
@@ -112,23 +112,25 @@ def search_locations(query):
     results = []
     query_lower = query.lower()
 
-    # Check the fallback list first
+    # Check fallback matches first
     for city in popular_cities:
         if query_lower in city["address"].lower():
             results.append((city["address"], {"lat": city["lat"], "lon": city["lon"], "address": city["address"]}))
 
-    # 2. Try live geocoding (works locally and whenever cloud IP isn't blocked)
+    # 2. Try live geocoding with a unique user agent and a strict timeout
     try:
-        geolocator = Nominatim(user_agent="satellite_pass_tracker_app")
-        locations = geolocator.geocode(query, exactly_one=False, limit=5)
+        # Nominatim requires a unique user-agent identifying your application
+        geolocator = Nominatim(user_agent="iss_pass_predictor_app_aryav_2026")
+        # Added a 3-second timeout so it doesn't hang the UI if blocked
+        locations = geolocator.geocode(query, exactly_one=False, limit=5, timeout=3)
         if locations:
             for loc in locations:
                 item = {"lat": loc.latitude, "lon": loc.longitude, "address": loc.address}
-                # Prevent duplicates if already added via the fallback list
                 if not any(r[0] == loc.address for r in results):
                     results.append((loc.address, item))
-    except Exception:
-        pass
+    except Exception as e:
+        # Print the exact error to your Streamlit logs so we know why it's failing
+        print(f"Live geocoding error on cloud: {e}")
 
     return results
 
