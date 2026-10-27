@@ -40,7 +40,7 @@ def fetch_iss_tle_from_ariss():
     line2 = next((ln for ln in lines if ln.startswith("2 25544")), None)   # ISS TLE line 2
     if not line1 or not line2:
         raise ValueError("ARISS file did not contain an ISS TLE")
-    return f"ISS (ZARYA)\n{line1}\n{line2}\n"                          # name line plus the two TLE lines
+    return f"ISS (ZARYA)\n{line1}\n{line2}\n"                         # name line plus the two TLE lines
 
 def load_satellites():
     # Re-download if the saved file is missing, empty, or older than the limit
@@ -55,14 +55,14 @@ def load_satellites():
             # Sanity check: a real download contains many TLE entries
             if data.count(b"\n1 ") < 3:
                 raise ValueError("download did not look like a TLE file")
-            with open(TLE_NAME, "wb") as f:                              # only overwrite after the check passes
+            with open(TLE_NAME, "wb") as f:                            # only overwrite after the check passes
                 f.write(data)
             print("Downloaded fresh TLE data from CelesTrak")
         except Exception as e:
-            print(f"CelesTrak download FAILED: {e!r}")                 # real reason shows in the terminal
+            print(f"CelesTrak download FAILED: {e!r}")                # real reason shows in the terminal
             try:
-                text = fetch_iss_tle_from_ariss()                      # try the backup source
-                with open(TLE_NAME, "w") as f:                         # only write after the fetch succeeded
+                text = fetch_iss_tle_from_ariss()                     # try the backup source
+                with open(TLE_NAME, "w") as f:                        # only write after the fetch succeeded
                     f.write(text)
                 print("Using ISS-only TLE from ARISS instead")
             except Exception as e2:
@@ -132,7 +132,7 @@ def visible_window(sat, eph, p, n=600):
     return t_arr[idx[0]], t_arr[idx[-1]]
 
 def fmt_utc(t):
-    return t.utc_strftime("%a %b %d %H:%M:%S UTC")
+    return t.utc_strftime("%D, %H:%M:%S UTC")
 
 def zone_label(local_dt):
     total_min = int(local_dt.utcoffset().total_seconds() // 60)
@@ -144,7 +144,9 @@ def zone_label(local_dt):
 
 def fmt_local(t, tz):
     d = t.astimezone(tz) 
-    return d.strftime("%a %b %d %H:%M:%S ") + zone_label(d)
+    return d.strftime("%D, %H:%M:%S ") + zone_label(d)
+
+
 
 def plot_sky_path(sat, site_obj, site_name, p, eph):
     t_arr = ts.linspace(p["rise"], p["set"], 200)
@@ -163,7 +165,6 @@ def plot_sky_path(sat, site_obj, site_name, p, eph):
     fig.patch.set_facecolor('white')
     
     # Configure grid lines for altitude/zenith and azimuth in dark gray for high contrast
-    # Configure grid lines with a valid RGBA float tuple
     ax.grid(True, color=(0, 0, 0, 0.15), linestyle='--', linewidth=0.7)
     # -------------------------------------------
 
@@ -202,28 +203,40 @@ def plot_sky_path(sat, site_obj, site_name, p, eph):
 def get_subsolar_point(eph, t):
     # Apparent position of the Sun as seen from Earth's center at time t
     astro = eph["earth"].at(t).observe(eph["sun"]).apparent()
-    ra, dec, _ = astro.radec(epoch="date")                  # right ascension and declination of date
-    lon = ((ra.hours - t.gast) * 15 + 540) % 360 - 180      # sub-solar longitude: RA minus sidereal time, wrapped to -180..180
+    ra, dec, _ = astro.radec(epoch="date")                   # right ascension and declination of date
+    lon = ((ra.hours - t.gast) * 15 + 540) % 360 - 180       # sub-solar longitude: RA minus sidereal time, wrapped to -180..180
     return dec.degrees, lon                                  # latitude, longitude in degrees
 
 def get_day_night_polygon(eph, t):
-    sun_lat, sun_lon = get_subsolar_point(eph, t)           # where the Sun is overhead at time t
+    sun_lat, sun_lon = get_subsolar_point(eph, t)             # where the Sun is overhead at time t
     dec_rad = np.radians(sun_lat if abs(sun_lat) > 0.01 else 0.01)   # declination in radians; avoid dividing by zero at the equinox
     lons = np.linspace(-180, 180, 361)                        # boundary sampled every degree of longitude
     # Day/night boundary latitude at each longitude: tan(lat) = -cos(lon - sun_lon) / tan(declination)
     term_lats = np.degrees(np.arctan(-np.cos(np.radians(lons - sun_lon)) / np.tan(dec_rad)))
-    term_lats = np.clip(term_lats, -89.9, 89.9)              # keep it on the map
-    dark_pole = -90 if sun_lat >= 0 else 90                   # night lies toward the pole that is in darkness
+    term_lats = np.clip(term_lats, -89.9, 89.9)               # keep it on the map
+    dark_pole = -90 if sun_lat >= 0 else 90                     # night lies toward the pole that is in darkness
     poly_lons = list(lons) + list(lons[::-1])                 # closed polygon: along the boundary, back along the pole
     poly_lats = list(term_lats) + [dark_pole] * len(lons)
     return poly_lons, poly_lats, list(lons), list(term_lats), sun_lat, sun_lon
 
 def short_name(address):
-    # Shorten a long geocoder address to "first part, last part", e.g. "Suva, Fiji"
-    parts = [p.strip() for p in address.split(",")]    # split the address at its commas
+    # Shorten a long geocoder address to City, State/Province, Country
+    parts = [p.strip() for p in address.split(",")]
     if len(parts) <= 2:
-        return address                                  # already short, so keep it as is
-    return f"{parts[0]}, {parts[-1]}"                   # city name plus country
+        return address
+    
+    # Filter out postal codes (containing digits)
+    filtered_parts = [p for p in parts if not any(char.isdigit() for char in p)]
+    
+    if len(filtered_parts) >= 3:
+        city = filtered_parts[-3]
+        state = filtered_parts[-2]
+        country = filtered_parts[-1]
+        return f"{city}, {state}, {country}"
+    elif len(filtered_parts) == 2:
+        return f"{filtered_parts[0]}, {filtered_parts[1]}"
+        
+    return f"{parts[0]}, {parts[-1]}"
 
 def plot_plotly_ground_track(sat, lat, lon, site_name, p, period_min, eph=None):
     half = period_min / 2 / 1440
@@ -254,27 +267,20 @@ def plot_plotly_ground_track(sat, lat, lon, site_name, p, period_min, eph=None):
 
     fig = go.Figure()
 
-
-
-        # --- LIGHT NIGHT SHADING AND DAY/NIGHT BOUNDARY AT THE PEAK OF THE PASS (not listed in the legend) ---
+    # --- LIGHT NIGHT SHADING AND DAY/NIGHT BOUNDARY AT THE PEAK OF THE PASS ---
     if eph is not None and "peak" in p:
-        # Night polygon and boundary curve at the peak time
         poly_lons, poly_lats, curve_lons, curve_lats, _, _ = get_day_night_polygon(eph, p["peak"])
-        for offset in [-360, 0, 360]:                              # three copies so the shading also covers the map beyond +/-180 degrees
+        for offset in [-360, 0, 360]:                           # three copies so the shading covers beyond +/-180 degrees
             fig.add_trace(go.Scattermap(
                 lon=[x + offset for x in poly_lons], lat=poly_lats,
-                mode="lines", fill="toself",                       # filled polygon; mode="lines" avoids the dots at each vertex
+                mode="lines", fill="toself",                    # filled polygon; mode="lines" avoids dots at each vertex
                 fillcolor="rgba(0, 8, 20, 0.15)", line=dict(width=0),   # light night shading, no outline
-                showlegend=False, hoverinfo="skip"))               # keep it out of the legend, and no hover tooltip
+                showlegend=False, hoverinfo="skip"))               # keep out of legend and tooltips
             fig.add_trace(go.Scattermap(
                 lon=[x + offset for x in curve_lons], lat=curve_lats,
-                mode="lines", line=dict(color="black", width=2),   # day/night boundary line; change the color here
-                showlegend=False, hoverinfo="skip"))               # keep it out of the legend, and no hover tooltip
+                mode="lines", line=dict(color="black", width=2),   # day/night boundary line
+                showlegend=False, hoverinfo="skip"))               # keep out of legend and tooltips
     # ------------------------------------------
-
-    idl_lats = list(range(-90, 91, 2))
-    idl_lons = [180] * len(idl_lats)
-
 
     fig.add_trace(go.Scattermap(
         lat=orbit_lats,
@@ -304,16 +310,31 @@ def plot_plotly_ground_track(sat, lat, lon, site_name, p, period_min, eph=None):
         hovertemplate='<b>Peak Position</b><br>Latitude: %{lat:.2f}°<br>Longitude: %{lon:.2f}°<extra></extra>'
     ))
 
-    target_lon = (lon + 180) % 360 - 180                    # keep longitude in -180..180 for the map
+     # --- INTERNATIONAL DATE LINE TRACE (Magenta, placed at the end of the legend) ---
+    idl_lats = list(range(-90, 91, 2))
+    idl_lons = [180] * len(idl_lats)
+
+    fig.add_trace(go.Scattermap(
+        lat=idl_lats,
+        lon=idl_lons,
+        mode='lines',
+        line=dict(width=1, color='maroon'),
+        name='International Date Line',
+        hovertemplate='<b>International Date Line</b><br>Longitude: 180°<extra></extra>'
+    ))
+
+    target_lon = (lon + 180) % 360 - 180                        # keep longitude in -180..180 for the map
     fig.add_trace(go.Scattermap(
         lat=[lat],
         lon=[target_lon],
-        mode='markers',                                     # draw a dot
+        mode='markers',                                         # draw a dot
         marker=dict(size=12, color='red'),
-        name=site_name,                                     # legend entry shows the full resolved address
-        text=[site_name],                                   # same full address in the hover tooltip
+        name=site_name,                                         # legend entry shows the full resolved address
+        text=[site_name],                                         # same full address in the hover tooltip
         hovertemplate='<b>%{text}</b><br>Latitude: %{lat:.2f}°<br>Longitude: %{lon:.2f}°<extra></extra>'
     ))
+
+    # -------------------------------------------------------------
 
     fig.update_layout(
         map=dict(
@@ -322,11 +343,11 @@ def plot_plotly_ground_track(sat, lat, lon, site_name, p, period_min, eph=None):
             zoom=1.5
         ),
         legend=dict(
-            orientation="h",                         # entries laid out in a row
-            x=0, xanchor="left",                     # start at the left edge
-            y=-0.02, yanchor="top",                  # just below the map
-            bgcolor="rgba(0, 0, 0, 0)",              # transparent, so it matches the page background
-            font=dict(color="white", size=12),       # light text for your dark page theme
+            orientation="h",                                 # entries laid out in a row
+            x=0, xanchor="left",                             # start at the left edge
+            y=-0.02, yanchor="top",                          # just below the map
+            bgcolor="rgba(0, 0, 0, 0)",                      # transparent, matches page background
+            font=dict(color="white", size=12),               # light text for dark page theme
         ),
         width=900,
         height=450,
@@ -478,7 +499,13 @@ def render_live_iss_leaflet(sat=None):
                     throw new Error("Satellite.js library failed to load.");
                 }
 
-                var map = L.map('map', { zoomControl: true, worldCopyJump: true }).setView([0, 0], 3);
+                var map = L.map('map', { 
+                    zoomControl: true, 
+                    worldCopyJump: false,
+                    maxBounds: [[-85, -180], [85, 180]],
+                    maxBoundsViscosity: 1.0,
+                    minZoom: 2
+                }).setView([0, 0], 3);
 
                 L.tileLayer('https://{s}.tile.openstreetmap.de/{z}/{x}/{y}.png', {
                     maxZoom: 18,
@@ -495,7 +522,7 @@ def render_live_iss_leaflet(sat=None):
                     var lambda = (meanLon + 1.915 * Math.sin(g) + 0.020 * Math.sin(2 * g)) * Math.PI / 180;  // ecliptic longitude (rad)
                     var eps = (23.439 - 0.0000004 * n) * Math.PI / 180;        // Earth's axial tilt (rad)
                     var ra = Math.atan2(Math.cos(eps) * Math.sin(lambda), Math.cos(lambda)) * 180 / Math.PI; // right ascension (deg)
-                    var dec = Math.asin(Math.sin(eps) * Math.sin(lambda)) * 180 / Math.PI;                   // declination (deg)
+                    var dec = Math.asin(Math.sin(eps) * Math.sin(lambda)) * 180 / Math.PI;                  // declination (deg)
                     var gmst = (280.46061837 + 360.98564736629 * n) % 360;     // Greenwich sidereal angle (deg)
                     var lon = ((((ra - gmst) % 360) + 540) % 360) - 180;       // sub-solar longitude, east positive, -180..180
                     return { lat: dec, lon: lon };                             // where the Sun is overhead
@@ -545,10 +572,10 @@ def render_live_iss_leaflet(sat=None):
                         L.polygon(shade, { color: 'transparent', fillColor: '#000814', fillOpacity: 0.45, interactive: false }).addTo(terminatorLayer);  // night
                         L.polyline(curve, { color: '#ffb703', weight: 2, opacity: 0.9, interactive: false }).addTo(terminatorLayer);  // boundary line
                     });
-                    return sun;                                       // lets the caller display the Sun's position
+                    return sun;                                         // lets the caller display the Sun's position
                 }
 
-                // --- ADDED CONTINUOUS UNWRAP HELPER TO FIX REFERENCE ERROR ---
+                //--- ADDED CONTINUOUS UNWRAP HELPER TO FIX REFERENCE ERROR ---
                 function continuousUnwrap(points) {
                     var newPoints = [];
                     var cumulativeOffset = 0;

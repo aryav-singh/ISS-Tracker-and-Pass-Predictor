@@ -8,9 +8,10 @@ from streamlit_searchbox import st_searchbox
 import tracker
 import time
 import streamlit.components.v1 as components 
+from datetime import datetime
 
 st.set_page_config(
-    page_title="LIVE ISS Tracker & Pass Predictor ",
+    page_title="LIVE ISS Tracker & Pass Predictor",
     page_icon="🛰️",
     layout="wide" 
 )
@@ -19,7 +20,7 @@ st.set_page_config(
 st.markdown("""
     <style>
         html, body, [class*="st-"], .stMarkdown, p, span, div, label, h1, h2, h3, h4, h5, h6 {
-            font-family: "Calibri",  sans-serif !important;
+            font-family: "Calibri", sans-serif !important;
         }
         .block-container {
             padding-top: 1rem !important;
@@ -52,27 +53,41 @@ eph = get_ephemeris()
 # Default to ISS for the live tracker view
 iss_sat = sats.get("ISS (ZARYA)", list(sats.values())[0])
 
-st.markdown("<h1 style='text-align: center;'>ISS Live Tracker & Pass Predictor</h1>", unsafe_allow_html=True)
+# Custom styling for a thicker border around the title box
+st.markdown(
+    """
+    <style>
+    .thick-border-box {
+        border: 4px solid white; /* Adjust thickness (e.g., 3px) and color here */
+        border-radius: 0.5rem;
+        padding: 1rem;
+        text-align: center;
+    }
+    </style>
+    <div class="thick-border-box">
+        <h1 style='margin: 0;'>LIVE ISS TRACKER & PASS PREDICTOR</h1>
+    </div>
+    """,
+    unsafe_allow_html=True
+)
 
 st.subheader("Live Tracker")
 
-# Render live Leaflet iframe
+# Render live Leaflet iframe cleanly without extra wrappers
 st.session_state.iss_iframe_uri = tracker.render_live_iss_leaflet(iss_sat)
 st.iframe(st.session_state.iss_iframe_uri, height=440)
-
-st.subheader("Pass Predictor") 
 
 # Select the ISS satellite directly without a dropdown widget
 sat_name = "ISS (ZARYA)"
 sat = sats.get(sat_name, list(sats.values())[0])
 
-# Display it cleanly as text instead of a select box
-st.text(f"Satellite: {sat_name}")
+st.subheader(f"Pass Predictor: {sat_name}") 
+
 
 n_kozai = sat.model.no_kozai
 period_min = 2 * math.pi / n_kozai
 
-st.write("Search Location")
+st.markdown("**Search Location:**")
 
 # Initialize session state for the selected location if it doesn't exist
 if "selected_loc" not in st.session_state:
@@ -82,6 +97,7 @@ has_searched = st.session_state.selected_loc is not None
 placeholder_text = "Type a different city..." if has_searched else "Type a city"
 widget_key = f"location_searchbox_{'searched' if has_searched else 'initial'}"
 
+# Full-width searchbox spanning the entire page container
 search_result = st_searchbox(
     tracker.search_locations,
     placeholder=placeholder_text,
@@ -98,7 +114,8 @@ if not st.session_state.selected_loc:
 
 lat = st.session_state.selected_loc["lat"]
 lon = st.session_state.selected_loc["lon"]
-resolved_address = st.session_state.selected_loc["address"]
+# Shorten the address right here so it updates everywhere in the app
+resolved_address = tracker.short_name(st.session_state.selected_loc["address"])
 site_obj = wgs84.latlon(lat, lon)
 
 st.success(f"📍 Selected: **{resolved_address}** (Lat: {lat:.2f}, Lon: {lon:.2f})")
@@ -147,11 +164,38 @@ for i, p in enumerate(filtered_passes):
         "Sun altitude (°)": round(p["sun_alt"]),
     })
 
-st.caption(f"Time zone: {tz_name} | TLE epoch: {tracker.fmt_utc(sat.epoch)}")
-st.dataframe(rows)
+
+# Local mapping for full-form timezone display in the caption only
+tz_full_names = {
+    "EDT": "Eastern Daylight Time",
+    "EST": "Eastern Standard Time",
+    "CDT": "Central Daylight Time",
+    "CST": "Central Standard Time",
+    "MDT": "Mountain Daylight Time",
+    "MST": "Mountain Standard Time",
+    "PDT": "Pacific Daylight Time",
+    "PST": "Pacific Standard Time",
+    "BST": "British Summer Time",
+    "GMT": "Greenwich Mean Time",
+    "UTC": "Coordinated Universal Time"
+}
+
+sample_local_time = datetime.now(tz)
+abbr = sample_local_time.tzname() or ""
+full_zone_name = tz_full_names.get(abbr, abbr)
+
+total_min = int(sample_local_time.utcoffset().total_seconds() // 60)
+sign = "+" if total_min >= 0 else "-"          
+h, m = divmod(abs(total_min), 60)            
+offset_str = f"UTC{sign}{h}" + (f":{m:02d}" if m else "")
+
+tz_caption_display = f"{full_zone_name}, {offset_str}" if full_zone_name else offset_str
+
+st.caption(f"Time zone: {tz_caption_display} | Data updated on {tracker.fmt_utc(sat.epoch)}")
+st.dataframe(rows, use_container_width=True)
 
 st.markdown("---")
-st.subheader("🛰️ Pass Visualization")
+st.subheader("Pass Visualization")
 
 # Pass selection mapping with a stable key so your choice persists
 pass_indices = {f"Pass #{i+1} — Peak: {tracker.fmt_local(p['peak'], tz)} (Max Altitude: {round(p['max_alt'])}°)": i for i, p in enumerate(filtered_passes)}
@@ -166,7 +210,7 @@ utc_time_str = tracker.fmt_utc(selected_pass['peak'])
 
 st.markdown(
     f"### Pass #{selected_pass_idx+1} — {resolved_address}  \n"
-    f"**Local Peak Time:** {local_time_str}  \n"
+    f"**Local Peak Time: {local_time_str}**  \n"
     f"**UTC Peak Time: {utc_time_str}** "
 )
 
