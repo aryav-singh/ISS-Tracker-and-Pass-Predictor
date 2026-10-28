@@ -7,11 +7,12 @@ import plotly.graph_objects as go
 import urllib.request
 import streamlit.components.v1 as components
 import base64
-from skyfield.api import wgs84
 import time
 import os
 import socket
 import streamlit as st
+import requests
+import io
 
 TLE_URL = "https://celestrak.org/NORAD/elements/gp.php?GROUP=stations&FORMAT=tle"
 TLE_NAME = "stations.tle" 
@@ -35,16 +36,16 @@ ts = load.timescale()
 ARISS_URL = "http://live.ariss.org/iss.txt"   # backup source: ISS only, on a different server from CelesTrak
 
 def fetch_iss_tle_from_ariss():
-    # Download the ISS TLE from ARISS and return it as 3-line TLE text (name, line 1, line 2)
+    # Download the ISS TLE from ARISS and return it as 3-line TLE text
     req = urllib.request.Request(ARISS_URL, headers={"User-Agent": "Mozilla/5.0"})
     with urllib.request.urlopen(req, timeout=20) as response:
-        text = response.read().decode("utf-8", errors="ignore")       # raw bytes to text
-    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]    # drop blank lines
-    line1 = next((ln for ln in lines if ln.startswith("1 25544")), None)   # ISS TLE line 1
-    line2 = next((ln for ln in lines if ln.startswith("2 25544")), None)   # ISS TLE line 2
+        text = response.read().decode("utf-8", errors="ignore")
+    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+    line1 = next((ln for ln in lines if ln.startswith("1 25544")), None)
+    line2 = next((ln for ln in lines if ln.startswith("2 25544")), None)
     if not line1 or not line2:
         raise ValueError("ARISS file did not contain an ISS TLE")
-    return f"ISS (ZARYA)\n{line1}\n{line2}\n"                         # name line plus the two TLE lines
+    return f"ISS (ZARYA)\n{line1}\n{line2}\n"                       # name line plus the two TLE lines
 
 def load_satellites():
     # Re-download if the saved file is missing, empty, or older than the limit
@@ -54,26 +55,26 @@ def load_satellites():
     if too_old:
         try:
             req = urllib.request.Request(TLE_URL, headers={"User-Agent": "Mozilla/5.0"})
-            with urllib.request.urlopen(req, timeout=20) as response:   # 20 s instead of 5 s
+            with urllib.request.urlopen(req, timeout=20) as response:
                 data = response.read()
-            # Sanity check: a real download contains many TLE entries
+            # Sanity check: a real CelesTrak download contains many TLE entries
             if data.count(b"\n1 ") < 3:
                 raise ValueError("download did not look like a TLE file")
-            with open(TLE_NAME, "wb") as f:                            # only overwrite after the check passes
+            with open(TLE_NAME, "wb") as f:
                 f.write(data)
             print("Downloaded fresh TLE data from CelesTrak")
         except Exception as e:
-            print(f"CelesTrak download FAILED: {e!r}")                # real reason shows in the terminal
+            print(f"CelesTrak download FAILED: {e!r}. Trying ARISS...")
             try:
-                text = fetch_iss_tle_from_ariss()                     # try the backup source
-                with open(TLE_NAME, "w") as f:                        # only write after the fetch succeeded
+                text = fetch_iss_tle_from_ariss()
+                with open(TLE_NAME, "w") as f:
                     f.write(text)
                 print("Using ISS-only TLE from ARISS instead")
             except Exception as e2:
                 print(f"ARISS download FAILED too: {e2!r}")
                 if not os.path.exists(TLE_NAME) or os.path.getsize(TLE_NAME) == 0:
                     raise RuntimeError("No TLE data available and both downloads failed") from e2
-    return {s.name: s for s in load.tle_file(TLE_NAME)}
+    return {s.name.strip(): s for s in load.tle_file(TLE_NAME)}
 
 def get_tle_lines(name):
     # Read the saved TLE file and return (line1, line2) for the named satellite

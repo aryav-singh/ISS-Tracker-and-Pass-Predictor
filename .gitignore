@@ -1,2 +1,9 @@
-__pycache__/__pycache__/tracker.cpython-314.pyc
+# Python cache
+__pycache__/
+*.pyc
+
+# Streamlit secrets (Crucial so you never leak your LocationIQ API key!)
 .streamlit/secrets.toml
+
+# Satellite tracking files downloaded at runtime
+stations.tle
