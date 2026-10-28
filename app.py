@@ -16,12 +16,19 @@ st.set_page_config(
     layout="wide" 
 )
 
-# Remove extra top padding and set font across the app
+# Remove extra top padding and set font across text elements without breaking icon fonts
 st.markdown("""
     <style>
-        html, body, [class*="st-"], .stMarkdown, p, span, div, label, h1, h2, h3, h4, h5, h6 {
+        /* Apply custom font ONLY to general text elements, avoiding Streamlit icon fonts */
+        html, body, .stMarkdown, p, label, h1, h2, h3, h4, h5, h6 {
             font-family: "Calibri", sans-serif !important;
         }
+        
+        /* Ensure Streamlit internal icons retain their icon font family */
+        [data-testid="stIconMaterial"], [class*="stIcon"] {
+            font-family: 'Material Symbols Rounded', 'Material Icons', sans-serif !important;
+        }
+
         .block-container {
             padding-top: 1rem !important;
         }
@@ -76,6 +83,20 @@ st.subheader("Live Tracker")
 # Render live Leaflet iframe cleanly without extra wrappers
 st.session_state.iss_iframe_uri = tracker.render_live_iss_leaflet(iss_sat)
 st.iframe(st.session_state.iss_iframe_uri, height=440)
+
+# --- TLE FILE VIEWER ---
+with st.expander("View Source Data"):
+    try:
+        with open("satellites.tle", "r") as f:
+            st.code(f.read(), language="text")
+    except FileNotFoundError:
+        try:
+            with open("stations.tle", "r") as f:
+                st.code(f.read(), language="text")
+        except Exception:
+            st.code(f"ISS (ZARYA)\n{iss_sat.model.tle[0]}\n{iss_sat.model.tle[1]}", language="text")
+
+st.markdown("<br>", unsafe_allow_html=True)
 
 # Select the ISS satellite directly without a dropdown widget
 sat_name = "ISS (ZARYA)"
