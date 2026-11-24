@@ -14,7 +14,7 @@ import streamlit as st
 import requests
 import io
 
-TLE_URL = "https://celestrak.org/NORAD/elements/gp.php?GROUP=stations&FORMAT=tle"
+
 TLE_NAME = "stations.tle" 
 MAX_TLE_AGE_DAYS = 0.2
 # Define twilight boundaries (civil/nautical twilight range)
@@ -54,26 +54,14 @@ def load_satellites():
                or (time.time() - os.path.getmtime(TLE_NAME)) / 3600.0 > MAX_TLE_AGE_DAYS * 24)
     if too_old:
         try:
-            req = urllib.request.Request(TLE_URL, headers={"User-Agent": "Mozilla/5.0"})
-            with urllib.request.urlopen(req, timeout=20) as response:
-                data = response.read()
-            # Sanity check: a real CelesTrak download contains many TLE entries
-            if data.count(b"\n1 ") < 3:
-                raise ValueError("download did not look like a TLE file")
-            with open(TLE_NAME, "wb") as f:
-                f.write(data)
-            print("Downloaded fresh TLE data from CelesTrak")
+            text = fetch_iss_tle_from_ariss()
+            with open(TLE_NAME, "w") as f:
+                f.write(text)
+            print("Downloaded fresh ISS TLE data from ARISS")
         except Exception as e:
-            print(f"CelesTrak download FAILED: {e!r}. Trying ARISS...")
-            try:
-                text = fetch_iss_tle_from_ariss()
-                with open(TLE_NAME, "w") as f:
-                    f.write(text)
-                print("Using ISS-only TLE from ARISS instead")
-            except Exception as e2:
-                print(f"ARISS download FAILED too: {e2!r}")
-                if not os.path.exists(TLE_NAME) or os.path.getsize(TLE_NAME) == 0:
-                    raise RuntimeError("No TLE data available and both downloads failed") from e2
+            print(f"ARISS download FAILED: {e!r}")
+            if not os.path.exists(TLE_NAME) or os.path.getsize(TLE_NAME) == 0:
+                raise RuntimeError("No TLE data available and ARISS download failed") from e
     return {s.name.strip(): s for s in load.tle_file(TLE_NAME)}
 
 def get_tle_lines(name):
@@ -84,8 +72,6 @@ def get_tle_lines(name):
         if lines[i].startswith(name):
             return lines[i + 1], lines[i + 2]
     return None, None
-
-
 
 
 def search_locations(searchterm: str, value=None):
